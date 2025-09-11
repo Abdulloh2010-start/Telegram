@@ -1,33 +1,16 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import '../styles/chatpage.scss';
 import { db, storage } from '../firebase.config';
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  startAt,
-  endAt,
-  limit,
-  getDocs,
-  addDoc,
-  serverTimestamp,
-  onSnapshot,
-  doc,
-  setDoc,
-  updateDoc,
-  getDoc,
-  deleteDoc
-} from 'firebase/firestore';
+import { collection, query, where, orderBy, startAt, endAt, limit, getDocs, addDoc, serverTimestamp, onSnapshot, doc, setDoc, updateDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 export default function ChatPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useUser();
   const me = user;
-
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [myChats, setMyChats] = useState([]);
@@ -36,13 +19,11 @@ export default function ChatPage() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [allPresence, setAllPresence] = useState({});
-
   const fileRef = useRef(null);
   const searchTimer = useRef(null);
   const textInputRef = useRef(null);
   const messagesAreaRef = useRef(null);
   const longPressTimer = useRef(null);
-
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [openActionMenuFor, setOpenActionMenuFor] = useState(null);
   const [actionMenuPos, setActionMenuPos] = useState({ left: 12, top: 12 });
@@ -50,8 +31,7 @@ export default function ChatPage() {
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-
-  const EMOJIS = ['😀', '😂', '😍', '👍', '🔥', '🎉', '😢', '🙌', '🤘', '🥳',];
+  const EMOJIS = ['😀','😂','😍','👍','🔥','🎉','😢','🙌','🤘','🥳'];
 
   useEffect(() => {
     const onRes = () => setIsMobile(window.innerWidth <= 768);
@@ -83,7 +63,7 @@ export default function ChatPage() {
     const unsub = onSnapshot(q, (snap) => {
       const arr = [];
       snap.forEach((s) => arr.push({ id: s.id, ...s.data() }));
-      setMyChats(arr);
+      setMyChats(arr.filter((c) => !c.archived));
     }, (err) => console.error('chats onSnapshot error', err));
     return () => unsub();
   }, [me]);
@@ -176,7 +156,8 @@ export default function ChatPage() {
         createdAt: serverTimestamp(),
         lastUpdated: serverTimestamp(),
         lastMessage: null,
-        lastMessageSender: null
+        lastMessageSender: null,
+        archived: false
       };
       const docRef = await addDoc(collection(db, 'chats'), newChat);
       const chatObj = { id: docRef.id, ...newChat };
@@ -200,6 +181,17 @@ export default function ChatPage() {
       if (activeChat?.id === chatId) setActiveChat(null);
     } catch (err) {
       console.error('deleteChat error', err);
+    }
+  };
+
+  const archiveChat = async (chatId) => {
+    if (!chatId || !db || !me) return;
+    try {
+      const chatDoc = doc(db, 'chats', chatId);
+      await updateDoc(chatDoc, { archived: true, archivedAt: serverTimestamp(), archivedBy: me.uid });
+      if (activeChat?.id === chatId) setActiveChat(null);
+    } catch (err) {
+      console.error('archive error', err);
     }
   };
 
@@ -385,6 +377,45 @@ export default function ChatPage() {
     setTimeout(() => textInputRef.current && textInputRef.current.focus(), 60);
   };
 
+  const openChatById = async (chatId, opts = { ensureUnarchived: false }) => {
+    if (!chatId || !db) return;
+    try {
+      const chatDocRef = doc(db, 'chats', chatId);
+      const snap = await getDoc(chatDocRef);
+      if (!snap.exists()) return;
+      const data = { id: snap.id, ...snap.data() };
+      if (data.archived && opts.ensureUnarchived && me) {
+        await updateDoc(chatDocRef, { archived: false, archivedAt: null, archivedBy: null, lastUpdated: serverTimestamp() });
+      }
+      setActiveChat(data);
+      setTimeout(() => {
+        const el = messagesAreaRef.current || document.querySelector('.messages-area');
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 120);
+    } catch (err) {
+      console.error('openChatById', err);
+    }
+  };
+
+  useEffect(() => {
+    const handler = (e) => {
+      const id = e?.detail?.chatId;
+      if (id) {
+        openChatById(id, { ensureUnarchived: true });
+      }
+    };
+    window.addEventListener('openChatFromArxiv', handler);
+    return () => window.removeEventListener('openChatFromArxiv', handler);
+  }, [me]);
+
+  useEffect(() => {
+    const id = location?.state?.openChatId;
+    if (id) {
+      openChatById(id, { ensureUnarchived: true });
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, []);
+
   return (
     <div className="chat-page">
       {!isMobile && (
@@ -531,7 +562,8 @@ export default function ChatPage() {
                   <button className="dots-btn" onClick={() => setShowHeaderMenu((s) => !s)}>⋯</button>
                   {showHeaderMenu && (
                     <div className="header-menu">
-                      <button onClick={() => { setShowHeaderMenu(false); setShowDeleteConfirm(true); }}>Удалить</button>
+                      <button onClick={() => { setShowHeaderMenu(false); archiveChat(activeChat.id); }} className="btn-archive">В архив</button>
+                      <button onClick={() => { setShowHeaderMenu(false); setShowDeleteConfirm(true); }} className="btn-delete-inmenu">Удалить</button>
                     </div>
                   )}
                 </div>
@@ -541,14 +573,7 @@ export default function ChatPage() {
                 {messages.map((m) => {
                   const mine = m.senderId === me.uid;
                   return (
-                    <div
-                      key={m.id}
-                      className={`message-row-wrapper ${mine ? 'mine-row' : 'their-row'}`}
-                      onContextMenu={(e) => onMessageContext(e, m)}
-                      onTouchStart={(e) => onMessageTouchStart(e, m)}
-                      onTouchEnd={onMessageTouchEnd}
-                      onTouchMove={onMessageTouchEnd}
-                    >
+                    <div key={m.id} className={`message-row-wrapper ${mine ? 'mine-row' : 'their-row'}`} onContextMenu={(e) => onMessageContext(e, m)} onTouchStart={(e) => onMessageTouchStart(e, m)} onTouchEnd={onMessageTouchEnd} onTouchMove={onMessageTouchEnd}>
                       <div className={`message ${mine ? 'mine' : 'their'}`}>
                         <div className="message-row">
                           <div className="message-body">
