@@ -7,6 +7,7 @@ import ChatPage from './pages/ChatPage';
 import Settings from './pages/Settings';
 import Arxiv from './pages/Arxiv';
 import Support from './pages/Support';
+import NotFound from './pages/NotFound';
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
 
         <Route path="/" element={<ProtectedRoute><Sidebar /></ProtectedRoute>}>
+          <Route path="*" element={<NotFound />}/>
           <Route path="profile/:handle" element={<Profile />} />
           <Route index element={<ChatPage />}/>
           <Route path="settings" element={<Settings />}/>
