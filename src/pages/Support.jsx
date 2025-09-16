@@ -49,7 +49,7 @@ export default function Support() {
             className="support-form"
             action={`https://formsubmit.co/${DEST_EMAIL}`}
             method="POST"
-            onSubmit={onSubmit}
+            onClick={onSubmit}
           >
             <input type="hidden" name="_subject" value="Новая заявка с формы поддержки" />
             <input type="hidden" name="_honey" style={{ display: 'none' }} />

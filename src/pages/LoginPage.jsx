@@ -30,7 +30,6 @@ export default function LoginPage(){
   const [errorEmailSignIn, setErrorEmailSignIn] = useState("");
   const [errorPasswordSignIn, setErrorPasswordSignIn] = useState("");
   const [generalErrorSignIn, setGeneralErrorSignIn] = useState("");
-
   const [emailSignUp, setEmailSignUp] = useState("");
   const [passwordSignUp, setPasswordSignUp] = useState("");
   const [errorEmailSignUp, setErrorEmailSignUp] = useState("");
